@@ -4,25 +4,17 @@ from scipy.optimize import minimize
 from scipy import linalg
 import time
 
-
-
-Points=np.loadtxt('surface_roughness.csv',dtype=float,skiprows=1,delimiter=',',usecols=[0,1])
-Zpoints=np.loadtxt('surface_roughness.csv',dtype=float,skiprows=1,delimiter=',',usecols=[-2])
-
-
-
-
 class OrdinaryKrigning:
     def __init__(self,Points,Zvals,Variogram='gaussian'):
         self.points=Points
         self.zvals=Zvals
         self.variogram=Variogram
     #variogram selector
-        if self.variogram =='gaussian' or 'Gaussian' :
+        if self.variogram =='gaussian':
             def Variogram(h, a,C):
                 # Gaussian model with sill C and range a
                 return C * (1 - np.exp(-1*((h/a)**2)))
-        if self.variogram =='spherical' or 'Spherical' : 
+        if self.variogram =='spherical': 
             def Variogram(h, a,C):
                 # Spherical model with sill C and range a
                 if h >= a:
@@ -101,14 +93,15 @@ class OrdinaryKrigning:
         # Reshape the results to match the shape of the original grid
         z = z.reshape(X.shape)
         return z
+    
     def AutoOptimize(self, InitialParams=None):
         if InitialParams is None:
             InitialParams = [np.var(self.zvals), np.max(np.sqrt(np.sum((self.points[:, None, :] - self.points[None, :, :]) ** 2, axis=-1)))/2, .001, 1]
 
         self.ManualParamSet(*InitialParams)
         self.params=InitialParams 
-        def mseLOO(params):
-            global itcounts
+
+        def mseLOO(params):    
             C, a, nugget, anisotropy_factor = params
             errors = []
             for i in range(len(self.points)):
@@ -140,21 +133,7 @@ class OrdinaryKrigning:
         t1 = time.time()
         self.exetime = t1-t0
         return z
-"""
-test=OrdinaryKrigning(Points,Zpoints,Variogram='spherical')
-Zarray=test.AutoKrige(step=50)
-print(test.exetime)
 
-
-
-plt.imshow(Zarray, origin='lower',extent=[0, 900, 0, 5000],aspect='auto',interpolation_stage='rgba')
-plt.scatter(Points[:,0],Points[:,1],marker='3',s=100,c=Zpoints)
-plt.title(f'{test.variogram} ')
-plt.colorbar(label='Z value')
-plt.clim(0,30)
-plt.show()
-
-"""
 class UniversalKriging(OrdinaryKrigning):
     def __init__(self, Points, Zvals, Variogram='gaussian'):
         super().__init__(Points, Zvals, Variogram)
@@ -191,17 +170,3 @@ class UniversalKriging(OrdinaryKrigning):
         
         return z
 
-
-test = UniversalKriging(Points, Zpoints, Variogram='spherical')
-test.calc_trend_coefficients()  # calculate the trend coefficients
-Zarray = test.AutoKrige(step=50)
-print(test.exetime)
-
-
-
-plt.imshow(Zarray, origin='lower',extent=[0, 900, 0, 5000],aspect='auto',interpolation_stage='rgba')
-plt.scatter(Points[:,0],Points[:,1],marker='3',s=100,c=Zpoints)
-plt.title(f'{test.variogram} ')
-plt.colorbar(label='Z value')
-plt.clim(0,30)
-plt.show()
