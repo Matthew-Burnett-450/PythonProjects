@@ -10,17 +10,32 @@ class OrdinaryKrigning:
         self.zvals=Zvals
         self.variogram=Variogram
     #variogram selector
-        if self.variogram =='gaussian':
-            def Variogram(h, a,C):
+        if self.variogram == 'gaussian':
+            def Variogram(h, a, C):
                 # Gaussian model with sill C and range a
                 return C * (1 - np.exp(-1*((h/a)**2)))
-        if self.variogram =='spherical': 
-            def Variogram(h, a,C):
+        elif self.variogram == 'spherical': 
+            def Variogram(h, a, C):
                 # Spherical model with sill C and range a
-                if h >= a:
-                    return C  # Variogram value reaches the sill at the range
-                else:
-                    return C * (1 - ((3/2) * (h/a) - (1/2) * (h/a)**3))            
+                return C * (1 - ((3/2) * (h/a) - (1/2) * (h/a)**3))  
+        elif self.variogram == 'exponential':
+            def Variogram(h, a, C):
+                # Exponential model with sill C and range a
+                return C * (1 - np.exp(-h/a))
+        elif self.variogram == 'linear':
+            def Variogram(h, a, C):
+                # Linear model with sill C and range a
+                return C * (h/a)
+        elif self.variogram == 'power':
+            def Variogram(h, a, C):
+                # Power model with sill C, range a
+                return C * (h/a)**2
+        else:
+            print('No valid variogram model selected')
+            quit()
+
+
+
         self.vVariogram = np.vectorize(Variogram,otypes=[float])
 
     def ManualParamSet(self,C,a,nugget,anisotropy_factor):
@@ -74,8 +89,8 @@ class OrdinaryKrigning:
 
             lamd = np.delete(lamd, -1)
 
-            zout = np.dot(lamd, self.zvals.T) 
-            return zout 
+            self.zarray = np.dot(lamd, self.zvals.T) 
+            return self.zarray 
         
         SingleGuess = np.vectorize(__guess, signature='(n)->()')
 
@@ -113,8 +128,8 @@ class OrdinaryKrigning:
                 model.Matrixsetup()
                 estimate = model.SinglePoint(*left_out_point)
                 errors.append((estimate - left_out_value)**2)
-            print(params)
-            return np.mean(errors)
+            self.krigemse = np.mean(errors)
+            return self.krigemse
 
         # Perform the optimization
         result = minimize(mseLOO, self.params,method='L-BFGS-B')
@@ -128,11 +143,27 @@ class OrdinaryKrigning:
 
         self.AutoOptimize()
         self.Matrixsetup()
-        z=self.interpgrid(xmax=np.max(self.points[:,0]),xmin=np.min(self.points[:,0]),ymax=np.max(self.points[:,1]),ymin=np.min(self.points[:,1]),step=step)
+        self.zarray=self.interpgrid(xmax=np.max(self.points[:,0]),xmin=np.min(self.points[:,0]),ymax=np.max(self.points[:,1]),ymin=np.min(self.points[:,1]),step=step)
 
         t1 = time.time()
         self.exetime = t1-t0
-        return z
+        return self.zarray
+    def Plot(self,title='Insert_Title',xtitle='',ytitle='',saveplot=False,address='',extent=[]):
+        try:
+            self.zarray
+        except NameError:
+            print('zmap not generated')
+            quit()  
+        plt.imshow(self.zarray,aspect='auto',extent=extent,origin='lower')
+        plt.scatter(self.points[:,0],self.points[:,1],marker='^',s=30,c=self.zvals)
+        plt.colorbar()
+        plt.title(title)
+        plt.xlabel(xtitle)
+        plt.ylabel(ytitle)
+        if saveplot==True:
+            plt.savefig(address)
+        plt.show()
+
 
 class UniversalKriging(OrdinaryKrigning):
     def __init__(self, Points, Zvals, Variogram='gaussian'):
