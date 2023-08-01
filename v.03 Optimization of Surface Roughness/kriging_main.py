@@ -12,7 +12,7 @@ zi_col=4
 resolution=10
 #kriging config
 Params=[]
-Variogram='gaussian'
+Variogram='power'
 #plotting
 saveplot=True
 
@@ -21,8 +21,8 @@ loadeddata=np.loadtxt('v.03 Optimization of Surface Roughness\data\surface_rough
 points=loadeddata[:,[xi_col,yi_col]]
 zi=loadeddata[:,zi_col]
 
-krige=OrdinaryKrigning(points,zi,Variogram=Variogram)
+krige=UniversalKriging(points,zi,Variogram=Variogram)
 krige.AutoKrige(step=resolution)
-krige.Plot(f'Top SA_{Variogram}_Variogram',xtitle='x',ytitle='y',saveplot=saveplot,address=f'v.03 Optimization of Surface Roughness\\figs\\Top_SA_{Variogram}.png',extent=[0, 800, 0, 4000])
-print(krige.krigemse)
+krige.Plot(f'Top SA_{Variogram}_Variogram_UK r2={krige.LOOr2}',xtitle='x',ytitle='y',saveplot=saveplot,address=f'v.03 Optimization of Surface Roughness\\figs\\Top_SA_{Variogram}_UK.png',extent=[0, 800, 0, 4000])
+print(krige.LOOr2)
 print(krige.params)

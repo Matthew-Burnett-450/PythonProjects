@@ -34,15 +34,18 @@ class OrdinaryKrigning:
             print('No valid variogram model selected')
             quit()
 
-
-
         self.vVariogram = np.vectorize(Variogram,otypes=[float])
+
+
 
     def ManualParamSet(self,C,a,nugget,anisotropy_factor):
         self.a=a
         self.anisotropy_factor=anisotropy_factor
         self.C=C
         self.nugget=nugget
+
+
+
     def Matrixsetup(self):
         # Compute the pairwise distance matrix
         distances = np.sqrt((self.points[:, None, 0] - self.points[None, :, 0]) ** 2 + 
@@ -59,6 +62,9 @@ class OrdinaryKrigning:
         result = result + np.eye(result.shape[0]) * self.nugget
 
         self.result=result
+
+
+
     def SinglePoint(self,Xo,Yo,training_points=None):
         if training_points is None:
             training_points = self.points
@@ -75,8 +81,31 @@ class OrdinaryKrigning:
 
         lamd=np.delete(lamd,-1)
 
-        zout=np.dot(lamd,self.zvals.T) 
-        return zout 
+        zout=np.dot(lamd,self.zvals.T)
+        return zout
+        
+
+    def SinglePointStdDev(self,Xo,Yo,training_points=None):
+        if training_points is None:
+            training_points = self.points    
+        self.std_dev = np.sqrt(self.C - np.dot(lamd, vectorb[:-1]))
+        
+        point0 = np.array([Xo, Yo])
+
+        distances_to_point0 = np.sqrt((training_points[:, 0] - Xo) ** 2 + (training_points[:, 1] - Yo) ** 2 / self.anisotropy_factor ** 2)
+
+        vectorb = self.vVariogram(distances_to_point0, self.a,self.C)
+
+        vectorb = np.append(vectorb, 1)
+
+        lamd=linalg.solve(self.result,vectorb,assume_a='sym')
+
+        lamd=np.delete(lamd,-1)
+
+        std_dev = np.sqrt(self.C - np.dot(lamd, vectorb[:-1]))
+        
+        return std_dev
+    
     def interpgrid(self, xmin, xmax, ymin, ymax, step):
         def __guess(point0):
             distances_to_point0 = np.sqrt(np.sum((self.points - point0) ** 2, axis=1))
@@ -105,10 +134,12 @@ class OrdinaryKrigning:
 
         z = SingleGuess(points_to_estimate)
 
-        # Reshape the results to match the shape of the original grid
         z = z.reshape(X.shape)
+
         return z
     
+
+
     def AutoOptimize(self, InitialParams=None):
         if InitialParams is None:
             InitialParams = [np.var(self.zvals), np.max(np.sqrt(np.sum((self.points[:, None, :] - self.points[None, :, :]) ** 2, axis=-1)))/2, .001, 1]
@@ -116,28 +147,31 @@ class OrdinaryKrigning:
         self.ManualParamSet(*InitialParams)
         self.params=InitialParams 
 
-        def mseLOO(params):    
+        def calc_r_squared(params):    
             C, a, nugget, anisotropy_factor = params
-            errors = []
+            predictions = []
             for i in range(len(self.points)):
-                left_out_point = self.points[i]
-                left_out_value = self.zvals[i]
-                # Perform Kriging with all points except the left-out one
                 model = OrdinaryKrigning(np.delete(self.points, i, axis=0), np.delete(self.zvals, i))
                 model.ManualParamSet(*params)
                 model.Matrixsetup()
-                estimate = model.SinglePoint(*left_out_point)
-                errors.append((estimate - left_out_value)**2)
-            self.krigemse = np.mean(errors)
-            return self.krigemse
+                estimate = model.SinglePoint(*self.points[i])
+                predictions.append(estimate)
+            correlation_matrix = np.corrcoef(predictions, self.zvals)
+            correlation_xy = correlation_matrix[0,1]
+            self.LOOr2 = correlation_xy**2
+            
+            return 1 - self.LOOr2  # We subtract from 1 because we want to minimize the function
 
         # Perform the optimization
-        result = minimize(mseLOO, self.params,method='L-BFGS-B')
+        result = minimize(calc_r_squared, self.params,method='L-BFGS-B')
         C_opt, a_opt, nugget_opt, anisotropy_factor_opt = result.x
         self.a=a_opt
         self.anisotropy_factor=anisotropy_factor_opt
         self.C=C_opt
-        self.nugget=nugget_opt     
+        self.nugget=nugget_opt
+    
+
+
     def AutoKrige(self,step=1):
         t0 = time.time()
 
@@ -148,6 +182,9 @@ class OrdinaryKrigning:
         t1 = time.time()
         self.exetime = t1-t0
         return self.zarray
+    
+
+
     def Plot(self,title='Insert_Title',xtitle='',ytitle='',saveplot=False,address='',extent=[]):
         try:
             self.zarray
@@ -165,22 +202,51 @@ class OrdinaryKrigning:
         plt.show()
 
 
+
+
+
+
+
 class UniversalKriging(OrdinaryKrigning):
-    def __init__(self, Points, Zvals, Variogram='gaussian'):
+    def __init__(self, Points, Zvals, Variogram='gaussian',trendfunc='cubic'):
         super().__init__(Points, Zvals, Variogram)
         
-        # Define the trend function
-        self.trend_function = lambda trend_params, x, y: trend_params[0] + trend_params[1]*x + trend_params[2]*y + trend_params[3]*x**2 + trend_params[4]*y**2
+        if trendfunc == 'quadratic':
+            def trend_func(trend_params, x, y):
+                return trend_params[0] + trend_params[1]*x + trend_params[2]*y + trend_params[3]*x**2 + trend_params[4]*y**2
+        elif trendfunc == 'cubic':
+            def trend_func(trend_params, x, y):
+                return trend_params[0] + trend_params[1]*x + trend_params[2]*y + trend_params[3]*x**2 + trend_params[4]*y**2 + trend_params[5]*x**3 + trend_params[6]*y**3
+        elif trendfunc == 'sinusoidal':
+            def trend_func(trend_params, x, y):
+                return trend_params[0] + trend_params[1]*np.sin(x) + trend_params[2]*np.sin(y)
+        elif trendfunc == 'logarithmic':
+            def trend_func(trend_params, x, y):
+                return trend_params[0] + trend_params[1]*np.log(x) + trend_params[2]*np.log(y)
+        elif trendfunc == 'exponential':
+            def trend_func(trend_params, x, y):
+                return trend_params[0] * np.exp(trend_params[1]*x + trend_params[2]*y)
+        elif trendfunc == 'mixed':
+            def trend_func(trend_params, x, y):
+                return trend_params[0] + trend_params[1]*x + trend_params[2]*y + trend_params[3]*x**2 + trend_params[4]*y**2 + trend_params[5]*np.sin(x) + trend_params[6]*np.sin(y)
+        else:
+            print('No valid trend function selected')
+            quit()
+            
+        self.trend_function = np.vectorize(trend_func, excluded=['trend_params'])
+
 
     def calc_trend_coefficients(self):
         # Define the residuals function
-        residuals = lambda trend_params: self.trend_function(trend_params, self.points[:, 0], self.points[:, 1]) - self.zvals
+        residuals = np.vectorize(lambda trend_params: self.trend_function(trend_params, self.points[:, 0], self.points[:, 1] / self.anisotropy_factor) - self.zvals)
 
         # Estimate the trend parameters
-        self.trend_params, _, _, _ = np.linalg.lstsq(np.column_stack((np.ones(len(self.points)), self.points[:, 0], self.points[:, 1], self.points[:, 0]**2, self.points[:, 1]**2)), self.zvals, rcond=None)
+        self.trend_params, _, _, _ = np.linalg.lstsq(np.column_stack((np.ones(len(self.points)), self.points[:, 0], self.points[:, 1] / self.anisotropy_factor, self.points[:, 0]**2, (self.points[:, 1] / self.anisotropy_factor)**2)), self.zvals, rcond=None)
         
         # Subtract the estimated trend from the data
-        self.zvals -= self.trend_function(self.trend_params, self.points[:, 0], self.points[:, 1])
+        self.zvals -= self.trend_function(self.trend_params, self.points[:, 0], self.points[:, 1] / self.anisotropy_factor)
+
+
 
     def SinglePoint(self, Xo, Yo, training_points=None):
         # First, add back the trend to the actual observations
@@ -189,15 +255,77 @@ class UniversalKriging(OrdinaryKrigning):
         # Perform kriging on detrended data and add the trend back
         return super().SinglePoint(Xo, Yo, training_points) + self.trend_function(self.trend_params, Xo, Yo)
 
-    def interpgrid(self, xmin, xmax, ymin, ymax, step):
-        # Perform kriging on detrended data
-        z = super().interpgrid(xmin, xmax, ymin, ymax, step)
 
-        # Add the trend back to the kriging estimates
+
+    def interpgrid(self, xmin, xmax, ymin, ymax, step):
         x_range = np.arange(xmin, xmax, step)
         y_range = np.arange(ymin, ymax, step)
+
+        # Create a grid of points
         X, Y = np.meshgrid(x_range, y_range)
-        z += self.trend_function(self.trend_params, X, Y)
-        
-        return z
+
+        # Stack the points into a 2D array
+        points_to_estimate = np.column_stack((X.flatten(), Y.flatten()))
+
+        # Initialize an empty array for the results
+        z = np.empty(points_to_estimate.shape[0])
+
+        # For each point in the grid
+        for i, point in enumerate(points_to_estimate):
+            # Get the kriging estimate for the point
+            z[i] = self.SinglePoint(*point)
+
+        # Add the trend back to the kriging estimates
+        z += self.trend_function(self.trend_params, X.flatten(), Y.flatten())
+
+        # Reshape the results to match the shape of the original grid
+        self.zarray = z.reshape(X.shape)
+
+        return self.zarray
+
+
+
+    def AutoOptimize(self, InitialParams=None):
+        if InitialParams is None:
+            InitialParams = [np.var(self.zvals), np.max(np.sqrt(np.sum((self.points[:, None, :] - self.points[None, :, :]) ** 2, axis=-1)))/2, .001, 1]
+
+        self.ManualParamSet(*InitialParams)
+        self.params=InitialParams 
+
+        def calc_r_squared(params):    
+            C, a, nugget, anisotropy_factor = params
+            predictions = []
+            for i in range(len(self.points)):
+                model = UniversalKriging(np.delete(self.points, i, axis=0), np.delete(self.zvals, i))
+                model.ManualParamSet(*params)
+                model.Matrixsetup()
+                model.calc_trend_coefficients()
+                estimate = model.SinglePoint(*self.points[i])
+                predictions.append(estimate)
+            correlation_matrix = np.corrcoef(predictions, self.zvals)
+            correlation_xy = correlation_matrix[0,1]
+            self.LOOr2 = correlation_xy**2
+            
+            return 1 - self.LOOr2  # We subtract from 1 because we want to minimize the function
+
+        # Perform the optimization
+        result = minimize(calc_r_squared, self.params,method='L-BFGS-B')
+        C_opt, a_opt, nugget_opt, anisotropy_factor_opt = result.x
+        self.a=a_opt
+        self.anisotropy_factor=anisotropy_factor_opt
+        self.C=C_opt
+        self.nugget=nugget_opt
+
+
+
+    def AutoKrige(self,step=1):
+        t0 = time.time()
+        self.AutoOptimize()
+        self.calc_trend_coefficients()
+        self.Matrixsetup()
+        self.zarray=self.interpgrid(xmax=np.max(self.points[:,0]),xmin=np.min(self.points[:,0]),ymax=np.max(self.points[:,1]),ymin=np.min(self.points[:,1]),step=step)
+        t1 = time.time()
+        self.exetime = t1-t0
+        return self.zarray
+            
 
