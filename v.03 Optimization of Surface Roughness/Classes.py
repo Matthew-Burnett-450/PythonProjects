@@ -242,11 +242,6 @@ class UniversalKriging(OrdinaryKrigning):
             'func': lambda a0,a1,a2,a3,a4,a5,a6,x, y: a0 + a1*x + a2*y + a3*x**2 + a4*y**2 + a5*x*y + a6*(x**2)*(y**2),
             'matrix': lambda: np.column_stack((np.ones(len(self.points)), self.points[:, 0], self.points[:, 1], self.points[:, 0]**2, self.points[:, 1]**2, self.points[:, 0]*self.points[:, 1], (self.points[:, 0]**2)*(self.points[:, 1]**2)))
             },
-            'exponential': {
-            'func': lambda a0,a1,a2,x, y: a0 * np.exp(a1*x + a2*y),
-            'matrix': lambda: np.column_stack((np.ones(len(self.points)), np.exp(self.points[:, 0]), np.exp(self.points[:, 1])))
-            },
-
         }
         #error handling
         if trendfunc not in trend_functions:
