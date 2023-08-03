@@ -151,7 +151,7 @@ class OrdinaryKrigning:
             C, a, nugget, anisotropy_factor = params
             predictions = []
             for i in range(len(self.points)):
-                model = OrdinaryKrigning(np.delete(self.points, i, axis=0), np.delete(self.zvals, i))
+                model = OrdinaryKrigning(np.delete(self.points, i, axis=0), np.delete(self.zvals, i),Variogram=self.variogram)
                 model.ManualParamSet(*params)
                 model.Matrixsetup()
                 estimate = model.SinglePoint(*self.points[i])
@@ -192,14 +192,16 @@ class OrdinaryKrigning:
             print('zmap not generated')
             quit()  
         plt.imshow(self.zarray,aspect='auto',extent=extent,origin='lower')
-        plt.scatter(self.points[:,0],self.points[:,1],marker='^',s=30,c=self.zvals)
+        plt.scatter(self.points[:,0],self.points[:,1],marker='^',s=30,c=self.zvals_org)
+        plt.clim(0,np.max(self.zvals_org))
         plt.colorbar()
         plt.title(title)
         plt.xlabel(xtitle)
         plt.ylabel(ytitle)
         if saveplot==True:
             plt.savefig(address)
-        plt.show()
+        #plt.show()
+        plt.close()
 
 
 
@@ -208,52 +210,76 @@ class OrdinaryKrigning:
 
 
 class UniversalKriging(OrdinaryKrigning):
-    def __init__(self, Points, Zvals, Variogram='gaussian',trendfunc='cubic'):
+    def __init__(self, Points, Zvals, Variogram='gaussian', trendfunc='cubic'):
         super().__init__(Points, Zvals, Variogram)
-        
-        if trendfunc == 'quadratic':
-            def trend_func(trend_params, x, y):
-                return trend_params[0] + trend_params[1]*x + trend_params[2]*y + trend_params[3]*x**2 + trend_params[4]*y**2
-        elif trendfunc == 'cubic':
-            def trend_func(trend_params, x, y):
-                return trend_params[0] + trend_params[1]*x + trend_params[2]*y + trend_params[3]*x**2 + trend_params[4]*y**2 + trend_params[5]*x**3 + trend_params[6]*y**3
-        elif trendfunc == 'sinusoidal':
-            def trend_func(trend_params, x, y):
-                return trend_params[0] + trend_params[1]*np.sin(x) + trend_params[2]*np.sin(y)
-        elif trendfunc == 'logarithmic':
-            def trend_func(trend_params, x, y):
-                return trend_params[0] + trend_params[1]*np.log(x) + trend_params[2]*np.log(y)
-        elif trendfunc == 'exponential':
-            def trend_func(trend_params, x, y):
-                return trend_params[0] * np.exp(trend_params[1]*x + trend_params[2]*y)
-        elif trendfunc == 'mixed':
-            def trend_func(trend_params, x, y):
-                return trend_params[0] + trend_params[1]*x + trend_params[2]*y + trend_params[3]*x**2 + trend_params[4]*y**2 + trend_params[5]*np.sin(x) + trend_params[6]*np.sin(y)
-        else:
+        #immutable instance of the Z coordanites
+        self.zvals_org = np.copy(self.zvals)
+        self.trend_func_setting=trendfunc
+
+        #define trend function for UK
+        trend_functions = {
+            'quadratic': {
+                'func': lambda a0,a1,a2,a3,a4,x, y: a0 + a1*x + a2*y + a3*x**2 + a4*y**2,
+                'matrix': lambda: np.column_stack((np.ones(len(self.points)), self.points[:, 0], self.points[:, 1], self.points[:, 0]**2, self.points[:, 1]**2))
+            },
+            'cubic': {
+                'func': lambda a0,a1,a2,a3,a4,a5,a6,x, y: a0 + a1*x + a2*y + a3*x**2 + a4*y**2 + a5*x**3 + a6*y**3,
+                'matrix': lambda: np.column_stack((np.ones(len(self.points)), self.points[:, 0], self.points[:, 1], self.points[:, 0]**2, self.points[:, 1]**2, self.points[:, 0]**3, self.points[:, 1]**3))
+            },
+            'interaction': {
+                'func': lambda a0,a1,a2,a3,x, y: a0 + a1*x + a2*y + a3*x*y,
+                'matrix': lambda: np.column_stack((np.ones(len(self.points)), self.points[:, 0], self.points[:, 1], self.points[:, 0] * self.points[:, 1]))
+            },
+            'hyperbolic': {
+                'func': lambda a0,a1,x, y: a0 + a1*np.sqrt(x**2 + y**2),
+                'matrix': lambda: np.column_stack((np.ones(len(self.points)), np.sqrt(self.points[:, 0]**2 + self.points[:, 1]**2)))
+            },
+            'inverse': {
+                'func': lambda a0,a1,a2,x, y: a0 + a1/x + a2/y,
+                'matrix': lambda: np.column_stack((np.ones(len(self.points)), 1/self.points[:, 0], 1/self.points[:, 1]))
+            },
+            'interaction_squared': {
+            'func': lambda a0,a1,a2,a3,a4,a5,a6,x, y: a0 + a1*x + a2*y + a3*x**2 + a4*y**2 + a5*x*y + a6*(x**2)*(y**2),
+            'matrix': lambda: np.column_stack((np.ones(len(self.points)), self.points[:, 0], self.points[:, 1], self.points[:, 0]**2, self.points[:, 1]**2, self.points[:, 0]*self.points[:, 1], (self.points[:, 0]**2)*(self.points[:, 1]**2)))
+            },
+            'exponential': {
+            'func': lambda a0,a1,a2,x, y: a0 * np.exp(a1*x + a2*y),
+            'matrix': lambda: np.column_stack((np.ones(len(self.points)), np.exp(self.points[:, 0]), np.exp(self.points[:, 1])))
+            },
+
+        }
+        #error handling
+        if trendfunc not in trend_functions:
             print('No valid trend function selected')
             quit()
-            
-        self.trend_function = np.vectorize(trend_func, excluded=['trend_params'])
-
+        #assign var for calc_trend step
+        self.trend_func = trend_functions[trendfunc]['func']
+        self.design_matrix_func = trend_functions[trendfunc]['matrix']
+        self.trend_function = np.vectorize(self.trend_func, excluded=['trend_params'])
 
     def calc_trend_coefficients(self):
         # Define the residuals function
         residuals = np.vectorize(lambda trend_params: self.trend_function(trend_params, self.points[:, 0], self.points[:, 1] / self.anisotropy_factor) - self.zvals)
 
+        # Prepare the design matrix based on the selected trend function
+        X = self.design_matrix_func()
+
         # Estimate the trend parameters
-        self.trend_params, _, _, _ = np.linalg.lstsq(np.column_stack((np.ones(len(self.points)), self.points[:, 0], self.points[:, 1] / self.anisotropy_factor, self.points[:, 0]**2, (self.points[:, 1] / self.anisotropy_factor)**2)), self.zvals, rcond=None)
-        
+        self.trend_params, _, _, _ = np.linalg.lstsq(X, self.zvals, rcond=None)
+
         # Subtract the estimated trend from the data
-        self.zvals -= self.trend_function(self.trend_params, self.points[:, 0], self.points[:, 1] / self.anisotropy_factor)
+        self.zvals -= self.trend_function(*self.trend_params, self.points[:, 0], self.points[:, 1] / self.anisotropy_factor)
+
 
 
 
     def SinglePoint(self, Xo, Yo, training_points=None):
         # First, add back the trend to the actual observations
-        zvals_original = self.zvals + self.trend_function(self.trend_params, self.points[:, 0], self.points[:, 1])
+        zvals_original = self.zvals + self.trend_function(*self.trend_params, self.points[:, 0], self.points[:, 1])
 
         # Perform kriging on detrended data and add the trend back
-        return super().SinglePoint(Xo, Yo, training_points) + self.trend_function(self.trend_params, Xo, Yo)
+        return super().SinglePoint(Xo, Yo, training_points) + self.trend_function(*self.trend_params, Xo, Yo)
+
 
 
 
@@ -275,8 +301,6 @@ class UniversalKriging(OrdinaryKrigning):
             # Get the kriging estimate for the point
             z[i] = self.SinglePoint(*point)
 
-        # Add the trend back to the kriging estimates
-        z += self.trend_function(self.trend_params, X.flatten(), Y.flatten())
 
         # Reshape the results to match the shape of the original grid
         self.zarray = z.reshape(X.shape)
@@ -296,13 +320,13 @@ class UniversalKriging(OrdinaryKrigning):
             C, a, nugget, anisotropy_factor = params
             predictions = []
             for i in range(len(self.points)):
-                model = UniversalKriging(np.delete(self.points, i, axis=0), np.delete(self.zvals, i))
+                model = UniversalKriging(np.delete(self.points, i, axis=0), np.delete(self.zvals, i),trendfunc=self.trend_func_setting,Variogram=self.variogram)
                 model.ManualParamSet(*params)
-                model.Matrixsetup()
                 model.calc_trend_coefficients()
+                model.Matrixsetup()
                 estimate = model.SinglePoint(*self.points[i])
                 predictions.append(estimate)
-            correlation_matrix = np.corrcoef(predictions, self.zvals)
+            correlation_matrix = np.corrcoef(predictions, self.zvals_org)
             correlation_xy = correlation_matrix[0,1]
             self.LOOr2 = correlation_xy**2
             
