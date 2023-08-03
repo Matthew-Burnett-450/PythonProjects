@@ -9,6 +9,8 @@ class OrdinaryKrigning:
         self.points=Points
         self.zvals=Zvals
         self.variogram=Variogram
+        #immutable instance of the Z coordanites
+        self.zvals_org = np.copy(self.zvals)
     #variogram selector
         if self.variogram == 'gaussian':
             def Variogram(h, a, C):
@@ -200,7 +202,7 @@ class OrdinaryKrigning:
         plt.ylabel(ytitle)
         if saveplot==True:
             plt.savefig(address)
-        #plt.show()
+        plt.show()
         plt.close()
 
 
@@ -212,8 +214,6 @@ class OrdinaryKrigning:
 class UniversalKriging(OrdinaryKrigning):
     def __init__(self, Points, Zvals, Variogram='gaussian', trendfunc='cubic'):
         super().__init__(Points, Zvals, Variogram)
-        #immutable instance of the Z coordanites
-        self.zvals_org = np.copy(self.zvals)
         self.trend_func_setting=trendfunc
 
         #define trend function for UK

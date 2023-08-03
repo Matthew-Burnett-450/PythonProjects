@@ -13,8 +13,8 @@ resolution=10
 #kriging config
 Params=[]
 
-Variogram='exponential'
-trendfunc='quadratic'
+Variogram='gaussian'
+
     #plotting
 saveplot=True
 
@@ -23,9 +23,9 @@ loadeddata=np.loadtxt('data\surface_roughness.csv',delimiter=',',skiprows=1)
 points=loadeddata[:,[xi_col,yi_col]]
 zi=loadeddata[:,zi_col]
 
-krige=UniversalKriging(points,zi,Variogram=Variogram,trendfunc=trendfunc)
+krige=OrdinaryKrigning(points,zi,Variogram=Variogram)
 krige.AutoKrige(step=resolution)
-krige.Plot(f'Top SA_{Variogram}_Variogram_UK r2={krige.LOOr2}',xtitle='Power',ytitle='Speed',saveplot=saveplot,address=f'figs\Top_SA_{Variogram}_{trendfunc}_UK.png',extent=[0, 900, 0, 5000])
+krige.Plot(f'Top SA_{Variogram}_Variogram_OK r2={krige.LOOr2}',xtitle='Power',ytitle='Speed',saveplot=saveplot,address=f'figs\Top_SA_{Variogram}_OK.png',extent=[0, 900, 0, 5000])
 print(krige.LOOr2)
 print(krige.params)
 
