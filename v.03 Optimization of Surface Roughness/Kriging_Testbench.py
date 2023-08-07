@@ -2,7 +2,7 @@ import numpy as np
 from noise import snoise2
 from scipy.ndimage import gaussian_filter
 import matplotlib.pyplot as plt
-from Classes import *
+from Ok_Uk_Module import *
 import concurrent.futures
 
 # Set the dimensions of the terrain
