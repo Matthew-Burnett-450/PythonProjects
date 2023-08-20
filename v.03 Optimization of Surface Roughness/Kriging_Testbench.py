@@ -12,10 +12,6 @@ height = 500
 # Set the scale of the terrain features
 scale = 0.025
 
-import numpy as np
-from noise import snoise2
-from scipy.ndimage import gaussian_filter
-
 #Simulated terrain test
 def generate_terrain(width, height, scale, octaves, persistence, sigma,z):
     # Initialize the terrain

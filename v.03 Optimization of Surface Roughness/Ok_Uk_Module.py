@@ -123,7 +123,7 @@ class OrdinaryKrigning:
             self.zarray = np.dot(lamd, self.zvals.T) 
             return self.zarray 
         
-        SingleGuess = np.vectorize(__guess, signature='(n)->()')
+        SingleGuess = np.vectorize(__guess, signature='(n)->()',otypes=[float])
 
         x_range = np.arange(xmin, xmax, step)
         y_range = np.arange(ymin, ymax, step)
@@ -174,15 +174,21 @@ class OrdinaryKrigning:
     
 
 
-    def AutoKrige(self,step=1):
+    def AutoKrige(self,step=1,bounds=None):
         t0 = time.time()
 
         self.AutoOptimize()
         self.Matrixsetup()
-        self.zarray=self.interpgrid(xmax=np.max(self.points[:,0]),xmin=np.min(self.points[:,0]),ymax=np.max(self.points[:,1]),ymin=np.min(self.points[:,1]),step=step)
+
+        if bounds == None:
+            self.zarray=self.interpgrid(xmax=np.max(self.points[:,0]),xmin=np.min(self.points[:,0]),ymax=np.max(self.points[:,1]),ymin=np.min(self.points[:,1]),step=step)
+        else:
+            xmax,xmin,ymax,ymin=bounds
+            self.zarray=self.interpgrid(xmax=xmax,xmin=xmin,ymax=ymax,ymin=ymin,step=step)
 
         t1 = time.time()
         self.exetime = t1-t0
+        print(self.exetime)
         return self.zarray
     
 
@@ -340,15 +346,19 @@ class UniversalKriging(OrdinaryKrigning):
 
 
 
-    def AutoKrige(self,step=1,xmax=None,ymax=None,ymin=None,xmin=None):
+    def AutoKrige(self,step=1,bounds=None):
         t0 = time.time()
+
         self.AutoOptimize()
         self.calc_trend_coefficients()
         self.Matrixsetup()
-        if xmax & ymax & ymin & xmin == None:
+
+        if bounds == None:
             self.zarray=self.interpgrid(xmax=np.max(self.points[:,0]),xmin=np.min(self.points[:,0]),ymax=np.max(self.points[:,1]),ymin=np.min(self.points[:,1]),step=step)
         else:
+            xmin,xmax,ymin,ymax=bounds
             self.zarray=self.interpgrid(xmax=xmax,xmin=xmin,ymax=xmax,ymin=xmin,step=step)
+            
         t1 = time.time()
         self.exetime = t1-t0
         return self.zarray

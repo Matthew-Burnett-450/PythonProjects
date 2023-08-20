@@ -1,36 +1,43 @@
 from Ok_Uk_Module import *
 from scipy.interpolate import Rbf
+from scipy.special import kl_div
 
 class SpacialSensitivityAnalysis(OrdinaryKrigning):
+
+
     def __init__(self, Points, Zvals, Variogram='gaussian',DiverganceModel='KLD'):
         super().__init__(Points, Zvals, Variogram)
         self.DivModel=DiverganceModel
         if self.DivModel == 'KLD':
-            def DivModel(Ztrue,Zest):
-                    return np.abs(((Ztrue)**2)-((Zest)**2))**.5
-        self.DivModel = np.vectorize(DivModel,otypes=[float])
+            def DivModel(p, q):
+                m = 0.5 * (p + q)
+                kld=np.mean(0.5 * np.sum(kl_div(p, m)) + 0.5 * np.sum(kl_div(q, m)))
+                return kld
+        self.DivModel = np.vectorize(DivModel,otypes=[np.float64])
+
+
     def DiverganceLOO(self):
+        print(np.shape(np.asarray(self.points[:,0]).squeeze()))
+        print(np.shape(np.asarray(self.points[:,1]).squeeze()))
         params=[self.C, self.a, self.nugget, self.anisotropy_factor]
-        self.estimates=[]
+        self.divscores=[]
         for i in range(len(self.points)):
             model = OrdinaryKrigning(np.delete(self.points, i, axis=0), np.delete(self.zvals, i),Variogram=self.variogram)
-            model.ManualParamSet(*params)
-            model.Matrixsetup()
-            estimate = model.SinglePoint(*self.points[i])
-            self.estimates.append(estimate)
-        Divscores= self.DivModel(self.zvals_org,self.estimates)
-        self.normdists=Divscores/np.linalg.norm(Divscores)
-        return self.normdists, Divscores
+            estimate = model.AutoKrige(step=100,bounds=[np.max(self.points[:,0]),np.min(self.points[:,0]),np.max(self.points[:,1]),np.min(self.points[:,1])])
+            self.divscores.append((np.mean(self.DivModel(np.abs(self.zarray/np.sum(self.zarray)),np.abs(estimate/np.sum(estimate))))))
+
+        return self.divscores
+    
+
     def plot_div(self,resolution=10,saveplot=False):
         
-        grid_x, grid_y = np.mgrid[0:900:900j, 0:5000:5000j]
+        np.save('div_scores',self.divscores)
 
-        rbf = Rbf(self.points[:,0], self.points[:,1], self.normdists, function='cubic')
-        grid_z = rbf(grid_x, grid_y)
-        
+        interpz = OrdinaryKrigning(points,np.asarray(self.divscores),Variogram='linear')
+        grid_z=interpz.AutoKrige(step=10)
         plt.imshow(grid_z,cmap='magma',aspect='auto',origin='lower',extent=[0, 900, 0, 5000],)
-        plt.scatter(self.points[:,0],self.points[:,1],cmap='magma',marker='^',s=30,c=self.normdists)
-        plt.clim(0,np.max(grid_z))
+        plt.scatter(self.points[:,0],self.points[:,1],cmap='magma',marker='^',s=30,c=self.divscores)
+        plt.clim(np.min(grid_z),np.max(grid_z))
         plt.colorbar()
         plt.title('Divergances')
         plt.xlabel('x')
@@ -63,6 +70,7 @@ zi=loadeddata[:,zi_col]
 
         
 krige=SpacialSensitivityAnalysis(points,zi,Variogram=Variogram)
-krige.AutoKrige(step=resolution)
+krige.AutoKrige(step=100)
 distances=krige.DiverganceLOO()
 krige.plot_div()
+krige.Plot()
