@@ -4,11 +4,9 @@ from scipy.ndimage import gaussian_filter
 import matplotlib.pyplot as plt
 from Ok_Uk_Module import *
 import concurrent.futures
+from KLDclasses import *
 
-# Set the dimensions of the terrain
-width = 500
-height = 500
-
+error=1.5
 # Set the scale of the terrain features
 scale = 0.025
 
@@ -32,6 +30,10 @@ def generate_terrain(width, height, scale, octaves, persistence, sigma,z):
 
     return np.abs(terrain)*z
 
+def simulate_array_with_error(original_array, error):
+    epsilon = np.random.uniform(-error, error, size=original_array.shape)
+    simulated_array = original_array + epsilon
+    return simulated_array
 
 def sample_points(terrain, num_points):
     # Get the width and height of the terrain
@@ -43,26 +45,24 @@ def sample_points(terrain, num_points):
 
     # Sample the z values from the terrain
     z_values = terrain[x_coords, y_coords]
-
+    z_values=simulate_array_with_error(z_values, error)
     # Return the coordinates and z values as numpy arrays
-    return np.array([x_coords, y_coords]).T, z_values
-
+    return np.array([x_coords, y_coords]).T,z_values
 
 def run_test(disp=False):
     terrain = generate_terrain(width=50, height=50, scale=np.random.uniform(low=.01,high=.02), octaves=np.random.randint(low=15,high=25), persistence=.1, sigma=2,z=10)
-    points,zpoints=sample_points(terrain=terrain,num_points=75)    
-    try:
-        krige=UniversalKriging(points,zpoints,Variogram='exponential',trendfunc='cubic')
-        zmap=krige.AutoKrige(step=1,xmax=50,ymax=50,ymin=0,xmin=0)
-        mse=np.mean((terrain-zmap.T)**2)
-        print(mse)
+    points,zpoints=sample_points(terrain=terrain,num_points=30)    
 
-    except:
-        np.save('terrain_map_of_error',terrain)
-        np.savetxt('samplepoints.csv',np.column_stack(points,zpoints))
+    kld=SpacialSensitivityAnalysisUK(points,zpoints,Variogram='exponential',trendfunc='cubic')
+    zmap=kld.AutoKrige(step=1,bounds=[0,100,0,100])
+    kld.DiverganceLOO(step=1,manualbounds=[0,100,0,100])
+    mse=np.mean((terrain-zmap.T)**2)
+    print(mse)
+
     if disp == True:
         # Create a figure with two subplots
-        fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(12, 6))
+        fig, ((ax1, ax2), (ax3, ax4)) = plt.subplots(2, 2, figsize=(12, 6))
+
 
         vmin = np.min([zmap, terrain])
         vmax = np.max([zmap, terrain])
@@ -70,20 +70,48 @@ def run_test(disp=False):
         # Display the first terrain in the first subplot
         im1=ax1.imshow(zmap, cmap='terrain', vmin=vmin, vmax=vmax,origin='lower')
         ax1.set_title('Krige Guess')
-
+        ax1.set_xlabel('X')
+        ax1.set_ylabel('Y')
         # Display the second terrain in the second subplot
         im2 = ax2.imshow(terrain.T, cmap='terrain',vmin=vmin, vmax=vmax,origin='lower')
         ax2.scatter(points[:,0],points[:,1],facecolors='none', edgecolors='r',s=1)
-        ax2.set_title('Terrain')
-        fig.colorbar(im1, ax=[ax1, ax2], orientation='horizontal')
+        ax2.set_xlabel('X')
+        ax2.set_ylabel('Y')
+        ax2.set_title('True Terrain')
+
+
         # Show the figure
+        x=np.linspace(np.min(kld.points[:,0]),np.max(kld.points[:,0]),200)
+        y=np.linspace(np.min(kld.points[:,1]),np.max(kld.points[:,1]),200)
+        X,Y=np.meshgrid(x,y)
+        Z=griddata(kld.points,kld.divscores,(X,Y),method='linear')
         
+        #plot the interpolated divergance scores
+        im = ax3.imshow(Z**.25, cmap='YlOrRd', interpolation='bilinear', origin='lower', extent=[np.min(kld.points[:,0]),np.max(kld.points[:,0]),np.min(kld.points[:,1]),np.max(kld.points[:,1])])
+        ax3.scatter(kld.points[:,0],kld.points[:,1],c='k',s=15)
+        #plot configuration
+        ax3.set_title('LOO Divergance Values')
+        ax3.set_xlabel('X')
+        ax3.set_ylabel('Y')
+        fig.colorbar(im, ax=ax3)
+
+        #ax4 make true diffrence between terain and kriged guess
+        vmin = np.min([np.abs(terrain.T-zmap)])
+        vmax = np.max([np.abs(terrain.T-zmap)])
+        im4=ax4.imshow(np.abs(terrain.T-zmap), cmap='Blues',vmin=vmin, vmax=vmax,origin='lower')
+        ax4.set_title('True Error')
+        ax4.set_xlabel('X')
+        ax4.set_ylabel('Y')
+        fig.colorbar(im4, ax=ax4)
+        plt.tight_layout()
+
+
         plt.show()
     
 
 #Terrain test
 
-n=20
+n=1
 
 t0 = time.time()
 

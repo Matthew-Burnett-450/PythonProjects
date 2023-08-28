@@ -357,7 +357,7 @@ class UniversalKriging(OrdinaryKrigning):
             self.zarray=self.interpgrid(xmax=np.max(self.points[:,0]),xmin=np.min(self.points[:,0]),ymax=np.max(self.points[:,1]),ymin=np.min(self.points[:,1]),step=step)
         else:
             xmin,xmax,ymin,ymax=bounds
-            self.zarray=self.interpgrid(xmax=xmax,xmin=xmin,ymax=xmax,ymin=xmin,step=step)
+            self.zarray=self.interpgrid(xmax=xmax,xmin=xmin,ymax=ymax,ymin=ymin,step=step)
             
         t1 = time.time()
         self.exetime = t1-t0

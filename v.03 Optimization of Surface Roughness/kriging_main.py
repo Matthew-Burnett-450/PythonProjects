@@ -28,4 +28,3 @@ krige.AutoKrige(step=resolution)
 krige.Plot(f'Side SA_{Variogram}_Variogram_OK r2={round(krige.LOOr2,2)}_interaction',xtitle='Power',ytitle='Speed',saveplot=saveplot,address=f'figs\Side_SA_{Variogram}_UK.png',extent=[0, 900, 0, 5000])
 print(krige.LOOr2)
 print(krige.params)
-
